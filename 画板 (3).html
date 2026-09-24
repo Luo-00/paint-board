@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在线网页画板 - 免费在线画图工具</title>
+<meta name="description" content="免费在线网页画板，支持画笔、橡皮擦、油漆桶、形状工具、文字、图层、撤销重做、网格标尺、自定义画布尺寸，无需下载安装，打开浏览器即可画画。">
+<meta name="keywords" content="在线画板,网页画板,在线画图,免费画图工具,在线绘画,浏览器画板,drawing board">
+<meta name="author" content="Online Paint">
+<meta property="og:title" content="在线网页画板 - 免费在线画图工具">
+<meta property="og:description" content="打开浏览器就能画画，支持图层、撤销、网格、自定义尺寸，完全免费。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 10px; font-family: "Microsoft YaHei", sans-serif; background: #f5f5f5; }
+  h3 { margin: 6px 0; font-size: 14px; color: #555; }
+  .toolbar {
+    background: #fff; border: 1px solid #ddd; border-radius: 6px;
+    padding: 8px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  button, label.btn {
+    padding: 5px 10px; border: 1px solid #bbb; background: #fafafa; border-radius: 4px;
+    cursor: pointer; font-size: 13px; user-select: none;
+  }
+  button:hover, label.btn:hover { background: #eef; }
+  button.active { background: #4a7df0; color: #fff; border-color: #4a7df0; }
+  .color-swatch {
+    display: inline-block; width: 22px; height: 22px; border-radius: 3px;
+    border: 1px solid #999; cursor: pointer; vertical-align: middle;
+  }
+  input[type=color] { width: 34px; height: 28px; padding: 0; border: 1px solid #bbb; border-radius: 4px; cursor: pointer; }
+  input[type=range] { vertical-align: middle; }
+  #canvasWrap {
+    position: relative; display: inline-block; border: 2px solid #333;
+    background: #fff; line-height: 0;
+    transform-origin: 0 0;
+  }
+  #canvasWrap canvas { position: absolute; top: 0; left: 0; }
+  #bgCanvas { position: absolute; top: 0; left: 0; z-index: 0; }
+  .layer-canvas { z-index: 1; }
+  #gridCanvas { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; display: none; }
+  .ruler { position: absolute; background: #fafafa; z-index: 3; pointer-events: none; display: none; }
+  #topRuler { top: 0; left: 0; height: 22px; border-bottom: 1px solid #999; }
+  #leftRuler { top: 0; left: 0; width: 22px; border-right: 1px solid #999; }
+  #wrapInner { position: relative; width: 1200px; height: 800px; }
+  .hint { font-size: 12px; color: #888; margin-left: 8px; }
+  select { padding: 4px; }
+  .group { display: flex; align-items: center; gap: 4px; padding: 0 6px; border-right: 1px solid #ddd; }
+  .viewport {
+    max-height: 75vh; overflow: auto; border: 1px solid #ccc;
+    background: #999; display: inline-block;
+  }
+  .main-area { display: flex; gap: 8px; align-items: flex-start; }
+  .history-panel {
+    width: 128px; max-height: 75vh; overflow-y: auto;
+    border: 1px solid #ccc; background: #fff; padding: 6px;
+  }
+  .history-panel h4 { margin: 0 0 6px; font-size: 12px; color: #555; }
+  .thumb-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .thumb {
+    width: 56px; height: 44px; object-fit: cover; border: 1px solid #ccc;
+    cursor: pointer; background: #fff; padding: 0;
+  }
+  .thumb.current { border: 2px solid #4a7df0; }
+  .thumb.redo-thumb { border-style: dashed; opacity: 0.7; }
+  .thumb-label { font-size: 10px; color: #999; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="group">
+    <button data-tool="brush" onclick="setTool('brush')">画笔(B)</button>
+    <button data-tool="eraser" onclick="setTool('eraser')">橡皮(E)</button>
+    <button data-tool="fill" onclick="setTool('fill')">油漆桶(G)</button>
+    <button data-tool="picker" onclick="setTool('picker')">取色(I)</button>
+    <button data-tool="rect" onclick="setTool('rect')">矩形(R)</button>
+    <button data-tool="circle" onclick="setTool('circle')">圆形(O)</button>
+    <button data-tool="line" onclick="setTool('line')">直线(L)</button>
+    <button data-tool="text" onclick="setTool('text')">文字(T)</button>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="group">
+    <span class="color-swatch" style="background:#000" onclick="setColor('#000000')"></span>
+    <span class="color-swatch" style="background:#e53935" onclick="setColor('#e53935')"></span>
+    <span class="color-swatch" style="background:#43a047" onclick="setColor('#43a047')"></span>
+    <span class="color-swatch" style="background:#1e88e5" onclick="setColor('#1e88e5')"></span>
+    <span class="color-swatch" style="background:#fdd835" onclick="setColor('#fdd835')"></span>
+    <span class="color-swatch" style="background:#8e24aa" onclick="setColor('#8e24aa')"></span>
+    <input type="color" id="customColor" value="#000000" onchange="setColor(this.value)" title="自定义颜色">
+  </div>
+  <div class="group">
+    <span>粗细</span>
+    <input type="range" id="lineWidth" min="1" max="40" value="5">
+  </div>
+  <div class="group">
+    <span>文字大小</span>
+    <input type="range" id="fontSize" min="12" max="80" value="24">
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="group">
+    <button onclick="undo()">撤销 (Ctrl+Z)</button>
+    <button onclick="redo()">重做 (Ctrl+Y)</button>
+    <button onclick="clearLayer()">清空当前层</button>
+    <button onclick="saveImage()">保存PNG</button>
+    <button onclick="saveJPG()">保存JPG</button>
+    <label class="btn">导入图片
+      <input type="file" accept="image/*" style="display:none" onchange="importImage(event)">
+    </label>
+  </div>
+  <div class="group">
+    <span>背景</span>
+    <span class="color-swatch" style="background:#fff" onclick="setBg('#ffffff')"></span>
+    <span class="color-swatch" style="background:#eeeeee" onclick="setBg('#eeeeee')"></span>
+    <span class="color-swatch" style="background:#222" onclick="setBg('#222222')"></span>
+    <span class="color-swatch" style="background:#87ceeb" onclick="setBg('#87ceeb')"></span>
+    <label class="btn">上传底图
+      <input type="file" accept="image/*" style="display:none" onchange="uploadBg(event)">
+    </label>
+  </div>
+  <div class="group">
+    <span>图层</span>
+    <select id="layerSelect" onchange="switchLayer(this.value)"></select>
+    <button onclick="addLayer()">新建图层</button>
+    <button onclick="deleteLayer()">删除当前层</button>
+    <button onclick="toggleVisible()">显示/隐藏</button>
+  </div>
+  <div class="group">
+    <button onclick="zoomOut()">－</button>
+    <span id="zoomLabel" style="min-width:48px;display:inline-block;text-align:center">100%</span>
+    <button onclick="zoomIn()">＋</button>
+    <button onclick="resetZoom()">重置</button>
+    <button onclick="toggleGrid()">网格</button>
+    <button onclick="toggleRuler()">标尺</button>
+  </div>
+  <div class="group">
+    <span>画布尺寸</span>
+    <input type="number" id="newW" value="1200" min="200" max="4000" step="50" style="width:75px">
+    <span>×</span>
+    <input type="number" id="newH" value="800" min="200" max="4000" step="50" style="width:75px">
+    <button onclick="applySize()">应用</button>
+    <button onclick="presetSize(800,800)">正方形</button>
+    <button onclick="presetSize(1920,1080)">16:9</button>
+    <button onclick="presetSize(1080,1920)">9:16</button>
+    <button onclick="presetSize(3000,2000)">高清</button>
+  </div>
+</div>
+
+<div class="main-area">
+  <div class="viewport">
+    <div id="canvasWrap">
+      <div id="wrapInner">
+        <canvas id="bgCanvas" width="1200" height="800"></canvas>
+        <canvas id="gridCanvas" width="1200" height="800"></canvas>
+        <canvas id="topRuler" class="ruler" width="1200" height="22"></canvas>
+        <canvas id="leftRuler" class="ruler" width="22" height="800"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="history-panel">
+    <h4>历史记录</h4>
+    <div class="thumb-label">← 更早</div>
+    <div class="thumb-row" id="historyThumbs"></div>
+    <div class="thumb-label">重做 →</div>
+    <div class="thumb-row" id="redoThumbs"></div>
+  </div>
+</div>
+
+<p class="hint">快捷键：B 画笔 / E 橡皮 / G 油漆桶 / I 取色 / R 矩形 / O 圆形 / L 直线 / T 文字 ；Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+S 保存。</p>
+
+<script>
+let W = 1200, H = 800;
+const wrapInner = document.getElementById('wrapInner');
+const bgCanvas = document.getElementById('bgCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+bgCtx.fillStyle = '#ffffff';
+bgCtx.fillRect(0, 0, W, H);
+
+// ---------- 图层管理 ----------
+let layers = [];          // { canvas, ctx, history:[], redo:[] , visible }
+let activeLayer = null;
+let activeIndex = -1;
+const MAX_HISTORY = 30;
+
+function createLayerCanvas() {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.className = 'layer-canvas';
+  wrapInner.appendChild(c);
+  return c;
+}
+
+function addLayer() {
+  const c = createLayerCanvas();
+  const layer = { canvas: c, ctx: c.getContext('2d'), history: [], redo: [], visible: true };
+  layers.push(layer);
+  setActiveLayer(layers.length - 1);
+  refreshLayerList();
+}
+
+function setActiveLayer(i) {
+  activeIndex = i;
+  activeLayer = layers[i];
+  layers.forEach((l, idx) => {
+    l.canvas.style.display = l.visible ? 'block' : 'none';
+  });
+  refreshLayerList();
+  renderHistoryPanel();
+}
+
+function switchLayer(i) { setActiveLayer(parseInt(i)); }
+
+function deleteLayer() {
+  if (layers.length <= 1) { alert('至少保留一个图层'); return; }
+  const l = layers[activeIndex];
+  l.canvas.remove();
+  layers.splice(activeIndex, 1);
+  setActiveLayer(Math.max(0, activeIndex - 1));
+}
+
+function toggleVisible() {
+  activeLayer.visible = !activeLayer.visible;
+  activeLayer.canvas.style.display = activeLayer.visible ? 'block' : 'none';
+}
+
+function refreshLayerList() {
+  const sel = document.getElementById('layerSelect');
+  sel.innerHTML = '';
+  layers.forEach((l, idx) => {
+    const opt = document.createElement('option');
+    opt.value = idx;
+    opt.textContent = '图层 ' + (idx + 1) + (l.visible ? '' : ' (隐藏)');
+    if (idx === activeIndex) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// 初始建一个图层
+addLayer();
+
+// ---------- 工具状态 ----------
+let tool = 'brush';
+let color = '#000000';
+let startX = 0, startY = 0;
+let drawing = false;
+let snapshot = null; // 形状工具预览用的底图
+
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('[data-tool]').forEach(b => {
+    b.classList.toggle('active', b.dataset.tool === t);
+  });
+}
+function setColor(c) {
+  color = c;
+  document.getElementById('customColor').value = c;
+  setTool('brush');
+}
+function getLineWidth() { return parseInt(document.getElementById('lineWidth').value); }
+
+// ---------- 撤销 / 重做 ----------
+function saveState() {
+  if (!activeLayer) return;
+  activeLayer.history.push(activeLayer.canvas.toDataURL());
+  if (activeLayer.history.length > MAX_HISTORY) activeLayer.history.shift();
+  activeLayer.redo = [];
+  renderHistoryPanel();
+}
+function undo() {
+  if (!activeLayer || activeLayer.history.length === 0) return;
+  activeLayer.redo.push(activeLayer.canvas.toDataURL());
+  restoreImage(activeLayer.history.pop());
+  renderHistoryPanel();
+}
+function redo() {
+  if (!activeLayer || activeLayer.redo.length === 0) return;
+  activeLayer.history.push(activeLayer.canvas.toDataURL());
+  restoreImage(activeLayer.redo.pop());
+  renderHistoryPanel();
+}
+function restoreImage(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const ctx = activeLayer.ctx;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(img, 0, 0);
+  };
+  img.src = dataUrl;
+}
+function clearLayer() {
+  if (!activeLayer) return;
+  saveState();
+  activeLayer.ctx.clearRect(0, 0, W, H);
+}
+
+// ---------- 背景 ----------
+function setBg(c) {
+  bgCtx.clearRect(0, 0, W, H);
+  bgCtx.fillStyle = c;
+  bgCtx.fillRect(0, 0, W, H);
+}
+function uploadBg(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      bgCtx.clearRect(0, 0, W, H);
+      bgCtx.drawImage(img, 0, 0, W, H);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---------- 自定义画布尺寸 ----------
+function presetSize(w, h) {
+  document.getElementById('newW').value = w;
+  document.getElementById('newH').value = h;
+  applySize();
+}
+
+function applySize() {
+  let nw = parseInt(document.getElementById('newW').value);
+  let nh = parseInt(document.getElementById('newH').value);
+  if (!nw || !nh) { alert('请输入有效的宽和高'); return; }
+  nw = Math.max(200, Math.min(4000, nw));
+  nh = Math.max(200, Math.min(4000, nh));
+  if (nw === W && nh === H) return;
+
+  // 1. 把旧 bg 和各图层内容先存到临时 canvas
+  const oldBg = document.createElement('canvas');
+  oldBg.width = W; oldBg.height = H;
+  oldBg.getContext('2d').drawImage(bgCanvas, 0, 0);
+
+  const layerSnapshots = layers.map(l => {
+    const t = document.createElement('canvas');
+    t.width = W; t.height = H;
+    t.getContext('2d').drawImage(l.canvas, 0, 0);
+    return t;
+  });
+
+  // 2. 切换尺寸
+  W = nw; H = nh;
+  wrapInner.style.width = W + 'px';
+  wrapInner.style.height = H + 'px';
+  bgCanvas.width = W;
+  bgCanvas.height = H;
+
+  // 3. 把旧内容画到新画布（左上角对齐）
+  bgCtx.drawImage(oldBg, 0, 0);
+  layers.forEach((l, i) => {
+    l.canvas.width = W;
+    l.canvas.height = H;
+    l.ctx.drawImage(layerSnapshots[i], 0, 0);
+    l.history = [];
+    l.redo = [];
+  });
+
+  document.getElementById('newW').value = W;
+  document.getElementById('newH').value = H;
+
+  // 同步网格和标尺尺寸
+  gridCanvas.width = W; gridCanvas.height = H;
+  topRuler.width = W; topRuler.height = 22;
+  leftRuler.width = 22; leftRuler.height = H;
+  if (gridCanvas.style.display === 'block') drawGrid();
+  if (topRuler.style.display === 'block') drawRulers();
+
+  alert('画布尺寸已调整为 ' + W + ' × ' + H + '（历史记录已清空）');
+}
+
+// ---------- 保存 ----------
+function saveImage() {
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, W, H);
+  octx.drawImage(bgCanvas, 0, 0);
+  layers.forEach(l => { if (l.visible) octx.drawImage(l.canvas, 0, 0); });
+  const link = document.createElement('a');
+  link.download = '我的画作.png';
+  link.href = out.toDataURL('image/png');
+  link.click();
+}
+
+function saveJPG() {
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, W, H);
+  octx.drawImage(bgCanvas, 0, 0);
+  layers.forEach(l => { if (l.visible) octx.drawImage(l.canvas, 0, 0); });
+  const link = document.createElement('a');
+  link.download = '我的画作.jpg';
+  link.href = out.toDataURL('image/jpeg', 0.92);
+  link.click();
+}
+
+// 导入图片到当前图层，可继续编辑
+function importImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      saveState();
+      // 按比例缩放到画布内，居中放置
+      const scale = Math.min(W / img.width, H / img.height, 1);
+      const dw = img.width * scale, dh = img.height * scale;
+      const dx = (W - dw) / 2, dy = (H - dh) / 2;
+      activeLayer.ctx.drawImage(img, dx, dy, dw, dh);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+// ---------- 历史缩略图面板 ----------
+function renderHistoryPanel() {
+  const hBox = document.getElementById('historyThumbs');
+  const rBox = document.getElementById('redoThumbs');
+  hBox.innerHTML = '';
+  rBox.innerHTML = '';
+  if (!activeLayer) return;
+  activeLayer.history.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = src;
+    img.title = '第 ' + (i + 1) + ' 步';
+    img.onclick = () => jumpToHistory(i);
+    hBox.appendChild(img);
+  });
+  activeLayer.redo.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.className = 'thumb redo-thumb';
+    img.src = src;
+    img.title = '重做 ' + (i + 1);
+    img.onclick = () => jumpToRedo(i);
+    rBox.appendChild(img);
+  });
+}
+function jumpToHistory(i) {
+  if (!activeLayer) return;
+  // 当前状态压入 redo，截断 history 到 i+1，恢复 history[i]
+  activeLayer.redo.push(activeLayer.canvas.toDataURL());
+  const target = activeLayer.history[i];
+  activeLayer.history = activeLayer.history.slice(0, i);
+  restoreImage(target);
+  renderHistoryPanel();
+}
+function jumpToRedo(i) {
+  if (!activeLayer) return;
+  activeLayer.history.push(activeLayer.canvas.toDataURL());
+  const target = activeLayer.redo[i];
+  activeLayer.redo = activeLayer.redo.slice(i + 1);
+  restoreImage(target);
+  renderHistoryPanel();
+}
+
+// ---------- 坐标 ----------
+let scale = 1;
+function getPos(e) {
+  const rect = activeLayer.canvas.getBoundingClientRect();
+  return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+}
+
+// ---------- 缩放视图 ----------
+const viewport = document.querySelector('.viewport');
+function applyScale() {
+  canvasWrap.style.transform = `scale(${scale})`;
+  document.getElementById('zoomLabel').textContent = Math.round(scale * 100) + '%';
+}
+function zoomIn()  { scale = Math.min(3, scale * 1.2); applyScale(); }
+function zoomOut() { scale = Math.max(0.15, scale / 1.2); applyScale(); }
+function resetZoom() { scale = 1; applyScale(); }
+viewport.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  const oldScale = scale;
+  if (e.deltaY < 0) scale = Math.min(3, scale * 1.1);
+  else scale = Math.max(0.15, scale / 1.1);
+  // 以鼠标位置为中心缩放：调整滚动位置
+  const beforeX = viewport.scrollLeft, beforeY = viewport.scrollTop;
+  const mx = e.clientX - viewport.getBoundingClientRect().left;
+  const my = e.clientY - viewport.getBoundingClientRect().top;
+  applyScale();
+  const ratio = scale / oldScale;
+  viewport.scrollLeft = mx * ratio - mx + beforeX * ratio;
+  viewport.scrollTop = my * ratio - my + beforeY * ratio;
+}, { passive: false });
+
+// ---------- 网格 & 标尺 ----------
+const gridCanvas = document.getElementById('gridCanvas');
+const topRuler = document.getElementById('topRuler');
+const leftRuler = document.getElementById('leftRuler');
+function drawGrid() {
+  const g = gridCanvas.getContext('2d');
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(0,0,0,0.12)';
+  g.lineWidth = 1;
+  const step = 50;
+  for (let x = step; x < W; x += step) {
+    g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); g.stroke();
+  }
+  for (let y = step; y < H; y += step) {
+    g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); g.stroke();
+  }
+}
+function drawRulers() {
+  const t = topRuler.getContext('2d');
+  t.clearRect(0, 0, W, 22);
+  t.fillStyle = '#333'; t.font = '10px sans-serif';
+  for (let x = 0; x <= W; x += 50) {
+    t.beginPath(); t.moveTo(x + 0.5, 14); t.lineTo(x + 0.5, 22); t.stroke();
+    if (x % 100 === 0) t.fillText(String(x), x + 3, 10);
+  }
+  const l = leftRuler.getContext('2d');
+  l.clearRect(0, 0, 22, H);
+  l.fillStyle = '#333'; l.font = '10px sans-serif';
+  for (let y = 0; y <= H; y += 50) {
+    l.beginPath(); l.moveTo(14, y + 0.5); l.lineTo(22, y + 0.5); l.stroke();
+    if (y % 100 === 0) l.save(); l.translate(11, y + 3); l.rotate(-Math.PI/2); l.fillText(String(y), -10, 0); l.restore();
+  }
+}
+function toggleGrid() {
+  const show = gridCanvas.style.display === 'none' || !gridCanvas.style.display;
+  gridCanvas.style.display = show ? 'block' : 'none';
+  if (show) drawGrid();
+}
+function toggleRuler() {
+  const show = topRuler.style.display === 'none' || !topRuler.style.display;
+  topRuler.style.display = show ? 'block' : 'none';
+  leftRuler.style.display = show ? 'block' : 'none';
+  if (show) drawRulers();
+}
+
+// ---------- 油漆桶 Flood Fill ----------
+function floodFill(ctx, sx, sy, fillStyle) {
+  sx = Math.floor(sx); sy = Math.floor(sy);
+  const img = ctx.getImageData(0, 0, W, H);
+  const data = img.data;
+  const idx = (sy * W + sx) * 4;
+  const tr = data[idx], tg = data[idx+1], tb = data[idx+2], ta = data[idx+3];
+  // 解析填充色
+  const tmp = document.createElement('canvas').getContext('2d');
+  tmp.fillStyle = fillStyle;
+  tmp.fillRect(0,0,1,1);
+  const fc = tmp.getImageData(0,0,1,1).data;
+  const tolerance = 32;
+  if (Math.abs(tr-fc[0])<tolerance && Math.abs(tg-fc[1])<tolerance && Math.abs(tb-fc[2])<tolerance && Math.abs(ta-fc[3])<tolerance) return;
+
+  const stack = [[sx, sy]];
+  const match = (i) => Math.abs(data[i]-tr)<=tolerance && Math.abs(data[i+1]-tg)<=tolerance && Math.abs(data[i+2]-tb)<=tolerance && Math.abs(data[i+3]-ta)<=tolerance;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const i = (y * W + x) * 4;
+    if (!match(i)) continue;
+    data[i] = fc[0]; data[i+1] = fc[1]; data[i+2] = fc[2]; data[i+3] = 255;
+    stack.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---------- 鼠标事件 ----------
+const canvas = document.createElement('canvas'); // 仅用于坐标层引用，实际事件绑在wrapInner
+wrapInner.addEventListener('mousedown', onDown);
+wrapInner.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+
+function onDown(e) {
+  if (!activeLayer) return;
+  const { x, y } = getPos(e);
+
+  if (tool === 'picker') {
+    const px = activeLayer.ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+    if (px[3] === 0) return; // 透明不取
+    const hex = '#' + [px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+    setColor(hex);
+    return;
+  }
+
+  if (tool === 'fill') {
+    saveState();
+    floodFill(activeLayer.ctx, x, y, color);
+    return;
+  }
+
+  if (tool === 'text') {
+    const str = prompt('请输入文字：');
+    if (str) {
+      saveState();
+      const size = parseInt(document.getElementById('fontSize').value);
+      activeLayer.ctx.font = size + 'px sans-serif';
+      activeLayer.ctx.fillStyle = color;
+      activeLayer.ctx.fillText(str, x, y);
+    }
+    return;
+  }
+
+  // 画笔 / 橡皮 / 形状
+  drawing = true;
+  startX = x; startY = y;
+  lastX = x; lastY = y;
+  if (tool === 'rect' || tool === 'circle' || tool === 'line') {
+    snapshot = activeLayer.canvas.toDataURL();
+  }
+}
+let lastX = 0, lastY = 0;
+
+function onMove(e) {
+  if (!drawing || !activeLayer) return;
+  const { x, y } = getPos(e);
+  const ctx = activeLayer.ctx;
+
+  if (tool === 'brush' || tool === 'eraser') {
+    ctx.lineWidth = getLineWidth();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+    }
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    lastX = x; lastY = y;
+  } else if (tool === 'rect' || tool === 'circle' || tool === 'line') {
+    // 恢复快照再画预览
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = getLineWidth();
+      ctx.lineCap = 'round';
+      if (tool === 'rect') {
+        ctx.strokeRect(startX, startY, x - startX, y - startY);
+      } else if (tool === 'circle') {
+        const rx = Math.abs(x - startX) / 2;
+        const ry = Math.abs(y - startY) / 2;
+        ctx.beginPath();
+        ctx.ellipse(startX, startY, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (tool === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+    };
+    img.src = snapshot;
+  }
+}
+
+function onUp() {
+  if (!drawing) return;
+  drawing = false;
+  snapshot = null;
+  if (tool === 'brush' || tool === 'eraser' || tool === 'rect' || tool === 'circle' || tool === 'line') {
+    saveState();
+  }
+}
+
+// ---------- 快捷键 ----------
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'z') { e.preventDefault(); undo(); }
+    else if (k === 'y') { e.preventDefault(); redo(); }
+    else if (k === 's') { e.preventDefault(); saveImage(); }
+    return;
+  }
+  const map = { b:'brush', e:'eraser', g:'fill', i:'picker', r:'rect', o:'circle', l:'line', t:'text' };
+  if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
+});
+
+// 默认选中画笔
+setTool('brush');
+</script>
+</body>
+</html>
